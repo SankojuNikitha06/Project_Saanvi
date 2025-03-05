@@ -1,0 +1,128 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.mixture import GaussianMixture
+from sklearn.impute import SimpleImputer
+import openai  # Requires OpenAI API Key
+
+# OpenAI API Key (Replace with your own key if using externally)
+OPENAI_API_KEY = "have to enter our open AI key here"
+openai.api_key = OPENAI_API_KEY
+
+# Sample dataset, it may contain other variables as well
+data = {
+    "Age": [45, 48, 50, 52, 55, 58, 60],
+    "Hot_Flashes": [6, 7, 8, 6, 4, 2, 1],
+    "Mood_Swings": [5, 6, 7, 4, 5, 3, 2],
+    "Estrogen_Level": [45, 30, 20, 15, 12, 8, 5],
+    "Sleep_Issues": [3, 5, 7, 6, 8, 9, 10],
+    "Menstrual_Changes": ["Irregular", "Irregular", "Stopped", "Stopped", "Stopped", "Stopped", "Stopped"],
+    "Diet": ["Balanced", "Deficient", "Deficient", "Balanced", "Excess", "Balanced", "Deficient"],
+    "Exercise_Level": ["Active", "Moderate", "Inactive", "Active", "Inactive", "Moderate", "Inactive"]
+}
+
+# Converting to DataFrame, as it is the most widely used format with pandas
+df = pd.DataFrame(data)
+
+# this functon does all the preprocessing of the data before model training
+
+def preprocess_data(df):
+    # Handles missing values, encodes categorical variables, and scales numeric features. 
+    # Handle missing values
+    imputer = SimpleImputer(strategy="most_frequent")
+    df[df.columns] = imputer.fit_transform(df)
+
+    # Encode categorical variables
+    label_encoders = {}
+    categorical_cols = ["Menstrual_Changes", "Diet", "Exercise_Level"]
+    for col in categorical_cols:
+        le = LabelEncoder()
+        df[col] = le.fit_transform(df[col])
+        label_encoders[col] = le
+
+    # Standardize numerical variables
+    numeric_cols = ["Age", "Hot_Flashes", "Mood_Swings", "Estrogen_Level", "Sleep_Issues"]
+    scaler = StandardScaler()
+    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+
+    return df, scaler, label_encoders
+
+
+
+# This function trains the GMM model that clusters the model in to various groups
+# Note : the values of n_clusters is taken arbitrary. The value of it should be decided after even furthur studies of differnt stages in menopause
+
+def train_gmm(df, n_clusters=3):
+    # Train a Gaussian Mixture Model (GMM) and return trained model.
+    gmm = GaussianMixture(n_components=n_clusters, random_state=42)
+    gmm.fit(df)
+    return gmm
+
+def get_recommendations(cluster_label):
+    # Map clusters to menopause stages and provide recommendations. 
+    recommendations = {
+        0: {
+            "Stage": "Early Menopause",
+            "Diet": "Increase calcium & vitamin D intake. Focus on lean protein & fiber.",
+            "Exercise": "Strength training + cardio (30 min/day).",
+            "Medical Tests": "Estrogen & progesterone levels, bone density test."
+        },
+        1: {
+            "Stage": "Mid Menopause",
+            "Diet": "Include soy, flaxseeds, & omega-3. Reduce processed foods.",
+            "Exercise": "Yoga, Pilates, and light strength exercises.",
+            "Medical Tests": "Thyroid function, lipid profile, vitamin D levels."
+        },
+        2: {
+            "Stage": "Late/Post Menopause",
+            "Diet": "Low-fat, high-fiber diet. Hydration is crucial.",
+            "Exercise": "Walking, swimming, and flexibility workouts.",
+            "Medical Tests": "Bone density, cardiovascular screening."
+        }
+    }
+    return recommendations.get(cluster_label, {})
+
+def menopause_query_assistant():
+    # Allows the user to ask menopause-related questions and gets AI-generated responses.
+    print("\n Saanvi is here to help you! Ask any question about menopause.")
+    while True:
+        user_query = input("Type your question (or type 'exit' to quit): ")
+        if user_query.lower() == "exit":
+            print("Goodbye! Stay healthy and take care.")
+            break
+
+        # Send query to OpenAI (or another NLP model)
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "system", "content": "You are a menopause health expert."},
+                      {"role": "user", "content": user_query}]
+        )
+
+        # Display AI Response
+        print("\n AI Response: ", response['choices'][0]['message']['content'], "\n")
+
+def main():
+    """ Main function to process data, train model, and predict a new sample. """
+    df_processed, scaler, label_encoders = preprocess_data(df)
+
+    # Train GMM model
+    gmm_model = train_gmm(df_processed, n_clusters=3)
+
+    # Predict clusters for the dataset
+    clusters = gmm_model.predict(df_processed)
+    df["Cluster"] = clusters
+
+    # Display results
+    for i in range(len(df)):
+        cluster_label = df.loc[i, "Cluster"]
+        print(f"\n Person {i+1} - {get_recommendations(cluster_label)}")
+
+    # Ask the user if they have queries
+    user_response = input("\nWould you like to ask menopause-related questions? (yes/no): ").strip().lower()
+    if user_response == "yes":
+        menopause_query_assistant()
+
+    return gmm_model, scaler, label_encoders
+
+# Run the pipeline
+trained_model, trained_scaler, trained_encoders = main()
